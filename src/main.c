@@ -51,6 +51,7 @@
 struct config_s config;
 struct config_s config_defaults;
 unsigned int received_sighup = FALSE;   /* boolean */
+unsigned int doCorruption = FALSE;  /* boolean */
 
 /*
  * Handle a signal
@@ -149,6 +150,7 @@ display_usage (void)
                 "Options are:\n"
                 "  -d        Do not daemonize (run in foreground).\n"
                 "  -c FILE   Use an alternate configuration file.\n"
+                "  -r        Corrupt the string  #IPS!  if it is sent in either direction.\n"
                 "  -h        Display this usage information.\n"
                 "  -l        Display the license.\n"
                 "  -v        Display version information.\n");
@@ -224,7 +226,7 @@ process_cmdline (int argc, char **argv, struct config_s *conf)
 {
         int opt;
 
-        while ((opt = getopt (argc, argv, "c:vldh")) != EOF) {
+        while ((opt = getopt (argc, argv, "c:vldhr")) != EOF) {
                 switch (opt) {
                 case 'v':
                         display_version ();
@@ -249,6 +251,9 @@ process_cmdline (int argc, char **argv, struct config_s *conf)
                                          argv[0]);
                                 exit (EX_SOFTWARE);
                         }
+                        break;
+                case 'r':
+                        doCorruption = TRUE;
                         break;
 
                 case 'h':

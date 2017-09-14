@@ -30,9 +30,15 @@
 #include "buffer.h"
 #include "heap.h"
 #include "log.h"
+#include <stdio.h>
+#include <time.h>
 
 #define BUFFER_HEAD(x) (x)->head
 #define BUFFER_TAIL(x) (x)->tail
+
+extern unsigned int doCorruption;
+char *szPatternToCorrupt = "#IPS!";
+int nBytesToCorrupt = 5;
 
 struct bufline_s {
         unsigned char *string;  /* the actual string of data */
@@ -50,6 +56,61 @@ struct buffer_s {
         struct bufline_s *tail; /* bottom of the buffer */
         size_t size;            /* total size of the buffer */
 };
+
+
+/* Find a string inside a buffer.
+ * Entry: buffer   is the buffer to search
+ *        buflen   is the # of bytes in the buffer
+ *        pattern  is the string of bytes to search for
+ *        patlen   is the # of bytes in pattern
+ * Exit:  Returns -1 if found
+ *        0 if not found at all
+ *        N if the first N chars of pattern matched the last N chars in buffer.
+ * Added to support "doCorruption".
+ */
+int memfind(unsigned char *buffer, size_t buflen, unsigned char *pattern, size_t patlen, unsigned char **patFound)
+{
+    int result = 0;
+    size_t offset;
+    do {
+        unsigned char * pchFound = memchr(buffer, pattern[0], buflen);
+        if(0 == pchFound) {
+            result = 0;
+            break;
+        } else {
+            offset = pchFound - buffer;
+            size_t bytesFromEnd = buflen - offset;
+            if(bytesFromEnd >= patlen) {
+                if(0==memcmp(pchFound, pattern, patlen)) {
+                    *patFound = pchFound;
+                    result = -1;
+                    break;
+                } else {
+                    result = 0;
+                }
+            } else {
+                size_t bytesToCompare = buflen - offset;
+                if(0==memcmp(pchFound, pattern, bytesToCompare)) {
+                    result = bytesToCompare;
+                    break;
+                } else {
+                    result = 0;
+                }
+            }
+        }
+        if(0==result) {
+            if(0==offset) {
+                buffer++;
+                buflen--;
+            } else {
+                buflen -= (pchFound - buffer);
+                buffer = pchFound;
+            }
+        }
+    } while(1);
+    return result;
+}
+    
 
 /*
  * Take a string of data and a length and make a new line which can be added
@@ -231,6 +292,26 @@ ssize_t read_buffer (int fd, struct buffer_s * buffptr)
         bytesin = read (fd, buffer, READ_BUFFER_SIZE);
 
         if (bytesin > 0) {
+            /* If the user has requested that we corrupt the buffer when a certain pattern
+             * occurs, check for that pattern.
+             * Note that we currently do not handle the case where the pattern is split between
+             * buffers, although I put support for that in memfind.
+             * To support that, we'd probably want to have a data structure, indexed by fd, 
+             * which kept track of whether the last read from that fd had a partial match at
+             * the end of a buffer.
+             * /mrr 2017-09-13
+             */
+            if(doCorruption) {
+                unsigned char *pFound=0;
+                int result = memfind(buffer, bytesin, szPatternToCorrupt, nBytesToCorrupt, &pFound);
+                if(-1 == result) {
+                    char szTime[32];
+                    time_t now = time(NULL);
+                    strftime(szTime, sizeof(szTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
+                    printf("%s I deliberately corrupted a buffer.\n", szTime);
+                    *pFound = 1 + *pFound;
+                }
+            }
                 if (add_to_buffer (buffptr, buffer, bytesin) < 0) {
                         log_message (LOG_ERR,
                                      "readbuff: add_to_buffer() error.");
