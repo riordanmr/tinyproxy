@@ -110,7 +110,36 @@ int memfind(unsigned char *buffer, size_t buflen, unsigned char *pattern, size_t
     } while(1);
     return result;
 }
-    
+
+/* If so configured, corrupt data in the buffer if it contains our special string.
+ * Entry:  buffer  is a buffer
+ *         bytesin is the # of bytes in the buffer
+ * Exit:   buffer has been modified if it contains our special string
+ */
+void optionallyCorruptBuffer(unsigned char *buffer, size_t bytesin)
+{
+    /* If the user has requested that we corrupt the buffer when a certain pattern
+     * occurs, check for that pattern.
+     * Note that we currently do not handle the case where the pattern is split between
+     * buffers, although I put support for that in memfind.
+     * To support that, we'd probably want to have a data structure, indexed by fd,
+     * which kept track of whether the last read from that fd had a partial match at
+     * the end of a buffer.
+     * /mrr 2017-09-13
+     */
+    if(doCorruption) {
+        unsigned char *pFound=0;
+        int result = memfind(buffer, bytesin, szPatternToCorrupt, nBytesToCorrupt, &pFound);
+        if(-1 == result) {
+            char szTime[32];
+            time_t now = time(NULL);
+            strftime(szTime, sizeof(szTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
+            printf("%s I deliberately corrupted a buffer.\n", szTime);
+            *pFound = 1 + *pFound;
+        }
+    }
+}
+
 
 /*
  * Take a string of data and a length and make a new line which can be added
@@ -292,26 +321,8 @@ ssize_t read_buffer (int fd, struct buffer_s * buffptr)
         bytesin = read (fd, buffer, READ_BUFFER_SIZE);
 
         if (bytesin > 0) {
-            /* If the user has requested that we corrupt the buffer when a certain pattern
-             * occurs, check for that pattern.
-             * Note that we currently do not handle the case where the pattern is split between
-             * buffers, although I put support for that in memfind.
-             * To support that, we'd probably want to have a data structure, indexed by fd, 
-             * which kept track of whether the last read from that fd had a partial match at
-             * the end of a buffer.
-             * /mrr 2017-09-13
-             */
-            if(doCorruption) {
-                unsigned char *pFound=0;
-                int result = memfind(buffer, bytesin, szPatternToCorrupt, nBytesToCorrupt, &pFound);
-                if(-1 == result) {
-                    char szTime[32];
-                    time_t now = time(NULL);
-                    strftime(szTime, sizeof(szTime), "%Y-%m-%d %H:%M:%S", localtime(&now));
-                    printf("%s I deliberately corrupted a buffer.\n", szTime);
-                    *pFound = 1 + *pFound;
-                }
-            }
+                optionallyCorruptBuffer(buffer, bytesin);
+            
                 if (add_to_buffer (buffptr, buffer, bytesin) < 0) {
                         log_message (LOG_ERR,
                                      "readbuff: add_to_buffer() error.");

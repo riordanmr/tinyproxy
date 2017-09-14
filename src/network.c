@@ -28,6 +28,8 @@
 #include "heap.h"
 #include "network.h"
 
+void optionallyCorruptBuffer(unsigned char *buffer, size_t bytesin);
+
 /*
  * Write the buffer to the socket. If an EINTR occurs, pick up and try
  * again. Keep sending until the buffer has been sent.
@@ -74,6 +76,8 @@ ssize_t safe_read (int fd, char *buffer, size_t count)
         do {
                 len = read (fd, buffer, count);
         } while (len < 0 && errno == EINTR);
+    
+        optionallyCorruptBuffer((unsigned char *)buffer, len);
 
         return len;
 }
